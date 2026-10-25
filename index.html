@@ -107,6 +107,19 @@
     </form>
   </div>
 
+  <!-- DIÁLOGO (substitui as caixas feias do navegador) -->
+  <div id="dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+    <div class="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-5">
+      <h3 id="dialog-title" class="text-lg font-bold text-emerald-400 mb-1"></h3>
+      <p id="dialog-msg" class="text-sm text-slate-300 mb-4 whitespace-pre-line break-words"></p>
+      <input id="dialog-input" type="text" maxlength="200" autocomplete="off" class="hidden w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-4 focus:outline-none focus:border-emerald-500">
+      <div class="flex gap-2 justify-end">
+        <button id="dialog-cancel" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold px-4 py-2 rounded-lg transition">Cancelar</button>
+        <button id="dialog-ok" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-5 py-2 rounded-lg transition">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ====== CONFIGURAÇÃO ======
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCf6QDH7sj6G_57MQhWT61vsruHRIC9ILmArG_z4ZJzyPw7NDY3G9qyO1mykxCKIGkTQ/exec';
@@ -151,6 +164,50 @@
       set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
       del(k) { try { localStorage.removeItem(k); } catch (e) {} }
     };
+
+    // ====== DIÁLOGO BONITO (avisos, confirmações e perguntas) ======
+    // dialog({title, message, input:{placeholder,value,readonly}, ok, cancel, danger})
+    // Retorna: texto (com input), true/false (confirmação) ou true (aviso, com cancel:null)
+    function dialog(opts) {
+      const o = Object.assign({ title: '', message: '', input: null, ok: 'OK', cancel: 'Cancelar', danger: false }, opts);
+      const box = $('dialog'), inp = $('dialog-input'), okBtn = $('dialog-ok'), noBtn = $('dialog-cancel');
+      return new Promise((resolve) => {
+        $('dialog-title').textContent = o.title;
+        $('dialog-msg').textContent = o.message;
+        $('dialog-msg').classList.toggle('hidden', !o.message);
+        okBtn.textContent = o.ok;
+        okBtn.className = `${o.danger ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-sm font-semibold px-5 py-2 rounded-lg transition`;
+        noBtn.textContent = o.cancel || '';
+        noBtn.classList.toggle('hidden', !o.cancel);
+        inp.classList.toggle('hidden', !o.input);
+        if (o.input) {
+          inp.value = o.input.value || '';
+          inp.placeholder = o.input.placeholder || '';
+          inp.readOnly = !!o.input.readonly;
+        }
+        box.classList.remove('hidden');
+        setTimeout(() => {
+          if (o.input) { inp.focus(); if (o.input.readonly) inp.select(); } else okBtn.focus();
+        }, 50);
+
+        function close(result) {
+          box.classList.add('hidden');
+          okBtn.onclick = noBtn.onclick = box.onclick = null;
+          document.removeEventListener('keydown', onKey);
+          resolve(result);
+        }
+        const accept = () => close(o.input ? inp.value : true);
+        const refuse = () => close(o.input ? null : (o.cancel ? false : true));
+        function onKey(e) {
+          if (e.key === 'Escape') refuse();
+          else if (e.key === 'Enter' && o.input) accept();
+        }
+        okBtn.onclick = accept;
+        noBtn.onclick = refuse;
+        box.onclick = (e) => { if (e.target === box) refuse(); };
+        document.addEventListener('keydown', onKey);
+      });
+    }
 
     // Identidade desta aba: continua a mesma se a página for recarregada
     let clientId = Math.random().toString(36).slice(2);
@@ -245,8 +302,9 @@
     loginBtn.onclick = doLogin;
     passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 
-    logoutBtn.onclick = () => {
-      if (!confirm('Sair da conta de administrador neste aparelho?')) return;
+    logoutBtn.onclick = async () => {
+      const yes = await dialog({ title: 'Sair da conta?', message: 'Você sai do modo administrador neste aparelho e precisará da senha para voltar.', ok: 'Sair' });
+      if (!yes) return;
       store.del('adminToken');
       store.del('pendingAlerts');
       store.del('roomsCache');
@@ -488,19 +546,20 @@
       const link = roomLink(r);
       try {
         await navigator.clipboard.writeText(link);
-        alert('Link da sala copiado! Envie para a outra pessoa.');
+        await dialog({ title: 'Link copiado', message: 'Envie para a outra pessoa.', cancel: null });
       } catch {
-        prompt('Copie o link da sala:', link);
+        await dialog({ title: 'Copie o link da sala', input: { value: link, readonly: true }, ok: 'Fechar', cancel: null });
       }
     }
 
     async function removeRoom(r) {
-      if (!confirm(`Apagar a sala "${roomLabel(r)}"? O link deixa de funcionar para todos.`)) return;
+      const yes = await dialog({ title: 'Apagar sala?', message: `"${roomLabel(r)}"\nO link deixa de funcionar para todos.`, ok: 'Apagar', danger: true });
+      if (!yes) return;
       try {
         const j = await api('deleteRoom', { room: r });
         if (!j.ok) throw new Error('fail');
       } catch (e) {
-        if (e.message !== 'auth') alert('Não foi possível apagar a sala. Tente de novo.');
+        if (e.message !== 'auth') await dialog({ title: 'Não foi possível apagar', message: 'Tente de novo em instantes.', cancel: null });
         return;
       }
       myRooms = myRooms.filter((x) => x.id !== r);
@@ -510,15 +569,15 @@
       renderAlerts();
     }
 
-    function ensureName() {
+    async function ensureName() {
       if (!usernameInput.value.trim()) {
-        const n = prompt('Qual é o seu nome?');
+        const n = await dialog({ title: 'Qual é o seu nome?', message: 'Ele aparece para quem estiver na sala.', input: { placeholder: 'Ex: Carlos' }, ok: 'Continuar' });
         if (n && n.trim()) usernameInput.value = n.trim();
       }
     }
 
-    function enterFromList(r) {
-      ensureName();
+    async function enterFromList(r) {
+      await ensureName();
       enterRoom(r);
     }
 
@@ -527,7 +586,7 @@
       try {
         const j = await api('createRoom', { label: roomLabelInput.value.trim() });
         if (!j.ok) {
-          alert(j.error === 'limit' ? 'Limite de salas atingido. Apague alguma.' : 'Não foi possível criar a sala.');
+          await dialog(j.error === 'limit' ? { title: 'Limite de salas atingido', message: 'Apague alguma sala para criar outra.', cancel: null } : { title: 'Não foi possível criar a sala', message: 'Tente de novo em instantes.', cancel: null });
           return;
         }
         myRooms.push({ id: j.id, label: j.label || '' });
@@ -536,7 +595,7 @@
         renderAlerts(); // atualiza a lista; você entra na sala só quando quiser
         roomLabelInput.focus();
       } catch (e) {
-        if (e.message !== 'auth') alert('Sem conexão com o servidor.');
+        if (e.message !== 'auth') await dialog({ title: 'Sem conexão', message: 'Não foi possível falar com o servidor.', cancel: null });
       } finally {
         createBtn.disabled = false;
       }
@@ -597,9 +656,13 @@
         return;
       }
       const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-      alert(isIOS
-        ? 'No iPhone: abra este link no Safari, toque no botão Compartilhar (quadrado com uma seta) e escolha "Adicionar à Tela de Início".'
-        : 'No Android: toque nos três pontinhos (⋮) do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".');
+      await dialog({
+        title: 'Instalar no celular',
+        message: isIOS
+          ? 'No iPhone: abra este link no Safari, toque no botão Compartilhar (quadrado com uma seta) e escolha "Adicionar à Tela de Início".'
+          : 'No Android: toque nos três pontinhos (⋮) do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".',
+        cancel: null
+      });
     }
     installBtn.onclick = doInstall;
     installBtnLobby.onclick = doInstall;
@@ -623,7 +686,10 @@
 
       if (mode === 'admin') clearPending(room);
 
-      window.history.replaceState({}, '', roomLink(room));
+      // Admin: a sala vira uma "página" do histórico, então Voltar do celular/navegador
+      // leva à lista de salas em vez de sair do app
+      if (mode === 'admin') window.history.pushState({ room }, '', roomLink(room));
+      else window.history.replaceState({}, '', roomLink(room));
       roomTitle.textContent = 'Sala: ' + (mode === 'admin' ? roomLabel(room) : room);
       setupScreen.classList.add('hidden');
       chatScreen.classList.remove('hidden');
@@ -640,15 +706,25 @@
         .catch(() => {});
     }
 
-    function leaveRoom() {
+    function showLobby() {
       activeRoom = '';
       messagesDiv.innerHTML = '';
       clearUnread();
-      window.history.replaceState({}, '', window.location.pathname);
       chatScreen.classList.add('hidden');
       setupScreen.classList.remove('hidden');
       renderAlerts();
     }
+    function leaveRoom() {
+      // O botão Voltar do sistema/navegador e o botão Sair fazem a mesma coisa
+      if (mode === 'admin' && window.history.state && window.history.state.room) {
+        window.history.back(); // o popstate abaixo mostra a lista
+        return;
+      }
+      showLobby();
+    }
+    window.addEventListener('popstate', () => {
+      if (activeRoom && mode === 'admin') showLobby();
+    });
 
     startBtn.addEventListener('click', () => { if (invitedRoom) enterRoom(invitedRoom); });
     usernameInput.addEventListener('keydown', (e) => {

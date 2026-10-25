@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat Directo</title>
+  <title>Chat Efêmero</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
 
   <div id="setup-screen" class="flex-1 flex items-center justify-center p-4">
     <div class="bg-slate-800 p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-700">
       <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Directo</h1>
-      <p class="text-slate-400 text-sm mb-6">Converse em tempo real de ponta a ponta.</p>
+      <p class="text-slate-400 text-sm mb-6">Conversa instantânea e sem salvamento de histórico.</p>
       
       <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Seu Nome / Apelido</label>
       <input type="text" id="username-input" placeholder="Ex: Carlos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-emerald-500">
@@ -24,8 +24,8 @@
   <div id="chat-screen" class="hidden flex-1 flex flex-col h-screen max-w-4xl mx-auto w-full border-x border-slate-800 bg-slate-950">
     <header class="p-4 border-b border-slate-800 bg-slate-900 flex justify-between items-center">
       <div>
-        <h2 class="font-bold text-emerald-400" id="room-title">Sala de Bate-papo</h2>
-        <span id="status-badge" class="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Aguardando participante...</span>
+        <h2 class="font-bold text-emerald-400" id="room-title">Sala Segura</h2>
+        <span id="status-badge" class="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Conectando...</span>
       </div>
       <button id="share-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition flex items-center gap-2">
         Copiar Link
@@ -35,7 +35,7 @@
     <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
     <form id="chat-form" class="p-4 border-t border-slate-800 bg-slate-900 flex gap-2">
-      <input type="text" id="message-input" placeholder="Digite uma mensagem..." class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
+      <input type="text" id="message-input" placeholder="Digite uma mensagem..." class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500" autocomplete="off">
       <button type="submit" id="send-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg font-semibold transition">Enviar</button>
     </form>
   </div>
@@ -51,84 +51,64 @@
     const statusBadge = document.getElementById('status-badge');
     const shareBtn = document.getElementById('share-btn');
 
-    let peer = null;
-    let conn = null;
     let username = '';
-    
+    let roomId = '';
+    let socket = null;
+
     const urlParams = new URLSearchParams(window.location.search);
-    const targetPeerId = urlParams.get('room');
+    roomId = urlParams.get('room');
+
+    if (!roomId) {
+      roomId = 'sala_' + Math.random().toString(36).substring(2, 9);
+      const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+
+    const roomUrl = window.location.href;
+    shareBtn.onclick = () => {
+      navigator.clipboard.writeText(roomUrl);
+      alert('Link da sala copiado! Envie para a sua amiga.');
+    };
 
     startBtn.addEventListener('click', () => {
       username = usernameInput.value.trim() || 'Anônimo';
+      if (!username) return;
+
       setupScreen.classList.add('hidden');
       chatScreen.classList.remove('hidden');
-      initPeer();
+
+      initChat();
     });
 
-    function initPeer() {
-      peer = new Peer();
-
-      peer.on('open', (id) => {
-        const baseUrl = window.location.origin + window.location.pathname;
-        const roomUrl = `${baseUrl}?room=${id}`;
-        
-        shareBtn.onclick = () => {
-          navigator.clipboard.writeText(roomUrl);
-          alert('Link da sala copiado! Envie para a outra pessoa entrar.');
-        };
-
-        if (targetPeerId) {
-          connectToPeer(targetPeerId);
-        } else {
-          appendSystemMessage('Aguardando a outra pessoa entrar no link...');
-        }
+    function initChat() {
+      socket = io('https://chat-server-relay.onrender.com', {
+        query: { room: roomId }
       });
 
-      peer.on('connection', (c) => {
-        conn = c;
-        setupConnection();
-      });
-
-      peer.on('error', (err) => {
-        appendSystemMessage('Erro de conexão: ' + err.type);
-      });
-    }
-
-    function connectToPeer(id) {
-      conn = peer.connect(id);
-      setupConnection();
-    }
-
-    function setupConnection() {
-      conn.on('open', () => {
+      socket.on('connect', () => {
         statusBadge.textContent = 'Conectado';
         statusBadge.className = 'text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-        appendSystemMessage('Conexão estabelecida! Podem conversar.');
+        appendSystemMessage('Você entrou na sala segura. As mensagens não são salvas.');
       });
 
-      conn.on('data', (data) => {
-        appendMessage(data.user, data.text, 'other');
-      });
-
-      conn.on('close', () => {
+      socket.on('disconnect', () => {
         statusBadge.textContent = 'Desconectado';
         statusBadge.className = 'text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20';
-        appendSystemMessage('O outro participante saiu.');
-        conn = null;
+        appendSystemMessage('Conexão perdida com o servidor.');
+      });
+
+      socket.on('message', (data) => {
+        appendMessage(data.user, data.text, 'other');
       });
     }
 
     chatForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const text = messageInput.value.trim();
-      if (!text) return;
+      if (!text || !socket) return;
 
-      if (!conn || !conn.open) {
-        appendSystemMessage('Aguarde a outra pessoa entrar no link para enviar mensagens.');
-        return;
-      }
-
-      conn.send({ user: username, text: text });
+      socket.emit('message', { room: roomId, user: username, text: text });
+      
       appendMessage('Você', text, 'me');
       messageInput.value = '';
     });

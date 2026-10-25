@@ -4,11 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Chat Efêmero</title>
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Chat">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* A tela ocupa exatamente a área visível do celular (dvh ignora a barra do navegador) */
     html, body { height: 100%; margin: 0; }
     body { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+    #chat-header { padding-top: calc(0.75rem + env(safe-area-inset-top, 0px)); }
     #chat-form { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px)); }
   </style>
 </head>
@@ -18,7 +24,7 @@
   <div id="setup-screen" class="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-4">
     <div class="bg-slate-800 p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-700">
       <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Efêmero</h1>
-      <p class="text-slate-400 text-sm mb-6">Cada mensagem some em 15 segundos, para os dois lados.</p>
+      <p class="text-slate-400 text-sm mb-6">Cada mensagem some em 2 minutos, para os dois lados.</p>
 
       <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Seu Nome / Apelido</label>
       <input type="text" id="username-input" maxlength="30" placeholder="Ex: Carlos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-4 focus:outline-none focus:border-emerald-500">
@@ -36,12 +42,14 @@
 
   <!-- TELA DO CHAT -->
   <div id="chat-screen" class="hidden flex-1 min-h-0 flex flex-col max-w-4xl mx-auto w-full border-x border-slate-800 bg-slate-950">
-    <header class="shrink-0 p-3 border-b border-slate-800 bg-slate-900 flex justify-between items-center gap-2">
+    <header id="chat-header" class="shrink-0 px-3 pb-3 border-b border-slate-800 bg-slate-900 flex flex-wrap justify-between items-center gap-2">
       <div class="min-w-0">
         <h2 class="font-bold text-emerald-400 truncate" id="room-title">Sala</h2>
         <span id="status-badge" class="text-xs px-2 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">Conectando...</span>
       </div>
       <div class="flex gap-2 shrink-0">
+        <button id="sound-btn" title="Ligar/desligar o som de aviso" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition">🔔</button>
+        <button id="install-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition">📲 Instalar</button>
         <button id="share-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition">Copiar Link</button>
         <button id="leave-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition">Sair</button>
       </div>
@@ -58,14 +66,14 @@
   <script>
     // ====== CONFIGURAÇÃO ======
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCf6QDH7sj6G_57MQhWT61vsruHRIC9ILmArG_z4ZJzyPw7NDY3G9qyO1mykxCKIGkTQ/exec';
-    const MESSAGE_LIFETIME_MS = 15000;
+    const MESSAGE_LIFETIME_MS = 120000; // 2 minutos
     const POLL_INTERVAL_MS = 2000;
+    const JOIN_TOKEN = '__join__'; // mensagem especial que avisa "fulano entrou na sala"
 
     const setupScreen = document.getElementById('setup-screen');
     const chatScreen = document.getElementById('chat-screen');
     const usernameInput = document.getElementById('username-input');
     const roomInput = document.getElementById('room-input');
-    const roomHint = document.getElementById('room-hint');
     const startBtn = document.getElementById('start-btn');
     const randomBtn = document.getElementById('random-btn');
     const messagesDiv = document.getElementById('messages');
@@ -74,16 +82,201 @@
     const statusBadge = document.getElementById('status-badge');
     const shareBtn = document.getElementById('share-btn');
     const leaveBtn = document.getElementById('leave-btn');
+    const soundBtn = document.getElementById('sound-btn');
+    const installBtn = document.getElementById('install-btn');
     const roomTitle = document.getElementById('room-title');
 
     const clientId = Math.random().toString(36).slice(2);
+    const baseTitle = document.title;
     let username = '';
     let roomId = '';
     let since = 0;
     let polling = false;
     let connectedOnce = false;
 
-    // ----- Salas -----
+    // ====== SOM E AVISOS ======
+    let audioCtx = null;
+    let soundOn = true;
+    let unread = 0;
+    let flashTimer = null;
+
+    // O navegador só libera som depois de um toque/clique da pessoa
+    function unlockAudio() {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      } catch (e) {}
+    }
+    document.addEventListener('pointerdown', unlockAudio);
+
+    function beep() {
+      if (!soundOn || !audioCtx) return;
+      try {
+        const t = audioCtx.currentTime;
+        [[880, 0], [1175, 0.15]].forEach(([freq, delay]) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, t + delay);
+          gain.gain.exponentialRampToValueAtTime(0.25, t + delay + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.2);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(t + delay);
+          osc.stop(t + delay + 0.22);
+        });
+      } catch (e) {}
+    }
+
+    soundBtn.onclick = () => {
+      soundOn = !soundOn;
+      soundBtn.textContent = soundOn ? '🔔' : '🔕';
+      if (soundOn) { unlockAudio(); beep(); }
+    };
+
+    function isAway() { return document.hidden || !document.hasFocus(); }
+
+    // Pisca o título da aba enquanto há mensagem não vista
+    function markUnread() {
+      unread++;
+      if (flashTimer) return;
+      let on = false;
+      flashTimer = setInterval(() => {
+        on = !on;
+        document.title = on ? `💬 (${unread}) Nova mensagem!` : baseTitle;
+      }, 1000);
+    }
+    function clearUnread() {
+      unread = 0;
+      if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
+      document.title = baseTitle;
+    }
+    window.addEventListener('focus', clearUnread);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) clearUnread(); });
+
+    // Notificação do sistema (aparece mesmo com a aba em segundo plano)
+    async function showNotice(title, body) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      try {
+        const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+        const opts = { body, tag: 'chat-' + roomId, renotify: true, vibrate: [200, 100, 200] };
+        if (reg) reg.showNotification(title, opts);
+        else new Notification(title, opts);
+      } catch (e) {}
+    }
+
+    function notifyIncoming(list) {
+      const last = list[list.length - 1];
+      const title = list.length > 1 ? 'Chat Efêmero' : last.title;
+      const body = list.length > 1 ? `${list.length} novas mensagens` : last.body;
+      beep();
+      if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+      if (isAway()) {
+        markUnread();
+        showNotice(title, body);
+      }
+    }
+
+    // ====== INSTALAR NO CELULAR ======
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone) installBtn.classList.add('hidden');
+
+    function makeIcon(size) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const x = c.getContext('2d');
+      x.fillStyle = '#059669';
+      x.fillRect(0, 0, size, size);
+      const bx = size * 0.2, by = size * 0.24, bw = size * 0.6, bh = size * 0.4, r = size * 0.09;
+      x.fillStyle = '#ffffff';
+      x.beginPath();
+      x.moveTo(bx + r, by);
+      x.arcTo(bx + bw, by, bx + bw, by + bh, r);
+      x.arcTo(bx + bw, by + bh, bx, by + bh, r);
+      x.arcTo(bx, by + bh, bx, by, r);
+      x.arcTo(bx, by, bx + bw, by, r);
+      x.closePath();
+      x.fill();
+      x.beginPath();
+      x.moveTo(size * 0.32, by + bh - 1);
+      x.lineTo(size * 0.32, size * 0.76);
+      x.lineTo(size * 0.5, by + bh - 1);
+      x.closePath();
+      x.fill();
+      x.fillStyle = '#059669';
+      [0.38, 0.5, 0.62].forEach((px) => {
+        x.beginPath();
+        x.arc(size * px, by + bh / 2, size * 0.035, 0, Math.PI * 2);
+        x.fill();
+      });
+      return c.toDataURL('image/png');
+    }
+
+    // Cria o "manifesto" do app na hora, para o app instalado abrir direto na sala
+    function setupManifest() {
+      try {
+        const scope = (window.location.origin + window.location.pathname).replace(/[^/]*$/, '');
+        const manifest = {
+          name: 'Chat Efêmero',
+          short_name: 'Chat',
+          start_url: window.location.href,
+          scope: scope,
+          display: 'standalone',
+          background_color: '#0f172a',
+          theme_color: '#0f172a',
+          icons: [
+            { src: makeIcon(192), sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+            { src: makeIcon(512), sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+          ]
+        };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
+        let link = document.getElementById('manifest-link');
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'manifest';
+          link.id = 'manifest-link';
+          document.head.appendChild(link);
+        }
+        link.href = url;
+
+        let apple = document.getElementById('apple-icon');
+        if (!apple) {
+          apple = document.createElement('link');
+          apple.rel = 'apple-touch-icon';
+          apple.id = 'apple-icon';
+          document.head.appendChild(apple);
+        }
+        apple.href = makeIcon(180);
+      } catch (e) {}
+    }
+    setupManifest();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+
+    let deferredInstall = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstall = e;
+    });
+    window.addEventListener('appinstalled', () => installBtn.classList.add('hidden'));
+
+    installBtn.onclick = async () => {
+      if (deferredInstall) {
+        deferredInstall.prompt();
+        try { await deferredInstall.userChoice; } catch (e) {}
+        deferredInstall = null;
+        return;
+      }
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      alert(isIOS
+        ? 'No iPhone: abra este link no Safari, toque no botão Compartilhar (quadrado com uma seta) e escolha "Adicionar à Tela de Início".'
+        : 'No Android: toque nos três pontinhos (⋮) do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".');
+    };
+
+    // ====== SALAS ======
     function cleanRoom(s) {
       return String(s || '')
         .toLowerCase()
@@ -99,16 +292,15 @@
       return 'sala-' + Array.from(a, (b) => (b % 36).toString(36)).join('');
     }
 
-    // Se a pessoa chegou por um link com ?room=..., já preenche a sala
-    const invitedRoom = cleanRoom(new URLSearchParams(window.location.search).get('room'));
     // Quem chega por um link de sala é convidado: só vê o campo do nome e o botão de entrar
+    const invitedRoom = cleanRoom(new URLSearchParams(window.location.search).get('room'));
     const isGuest = !!invitedRoom;
     if (isGuest) {
       roomInput.value = invitedRoom;
       document.getElementById('room-section').classList.add('hidden');
       randomBtn.classList.add('hidden');
       leaveBtn.classList.add('hidden');
-      document.querySelector('#setup-screen p').textContent = 'Você foi convidado para uma conversa. Cada mensagem some em 15 segundos. Digite seu nome e entre.';
+      document.querySelector('#setup-screen p').textContent = 'Você foi convidado para uma conversa. Cada mensagem some em 2 minutos. Digite seu nome e entre.';
     }
 
     function enterRoom(room) {
@@ -116,7 +308,14 @@
       roomId = room;
       since = 0;
 
+      // Pede permissão para avisos e libera o som (precisa ser dentro do clique)
+      unlockAudio();
+      if ('Notification' in window && Notification.permission === 'default') {
+        try { Notification.requestPermission(); } catch (e) {}
+      }
+
       window.history.replaceState({}, '', `${window.location.origin}${window.location.pathname}?room=${roomId}`);
+      setupManifest();
       roomTitle.textContent = 'Sala: ' + roomId;
 
       setupScreen.classList.add('hidden');
@@ -125,6 +324,9 @@
 
       poll();
       setInterval(poll, POLL_INTERVAL_MS);
+
+      // Avisa a outra pessoa que você entrou
+      sendToServer(JOIN_TOKEN).catch(() => {});
     }
 
     startBtn.addEventListener('click', () => {
@@ -157,7 +359,7 @@
       statusBadge.className = `text-xs px-2 py-0.5 rounded border ${colors[color]}`;
     }
 
-    // ----- Receber mensagens (consulta o Apps Script) -----
+    // ====== RECEBER MENSAGENS (consulta o Apps Script) ======
     async function poll() {
       if (polling) return;
       polling = true;
@@ -166,18 +368,31 @@
         const res = await fetch(url);
         const data = await res.json();
 
+        const firstPoll = !connectedOnce;
         setStatus('Conectado', 'green');
         if (!connectedOnce) {
           connectedOnce = true;
-          appendSystemMessage('Você entrou na sala. As mensagens somem em 15 segundos.');
+          appendSystemMessage('Você entrou na sala. As mensagens somem em 2 minutos.');
         }
 
+        const incoming = [];
         data.msgs.forEach((m) => {
           since = Math.max(since, m.id);
           if (m.from === clientId) return; // minhas mensagens já estão na tela
           const remaining = MESSAGE_LIFETIME_MS - (data.now - m.ts);
-          if (remaining > 0) appendMessage(m.user, m.text, 'other', remaining);
+          if (remaining <= 0) return;
+
+          if (m.text === JOIN_TOKEN) {
+            appendSystemMessage(`${m.user} entrou na sala`, remaining);
+            incoming.push({ title: 'Chat Efêmero', body: `${m.user} entrou na sala` });
+          } else {
+            appendMessage(m.user, m.text, 'other', remaining);
+            incoming.push({ title: m.user, body: m.text });
+          }
         });
+
+        // Na primeira consulta só carrega o que já estava na sala, sem apitar
+        if (!firstPoll && incoming.length) notifyIncoming(incoming);
       } catch (err) {
         setStatus('Sem conexão', 'red');
       } finally {
@@ -185,7 +400,15 @@
       }
     }
 
-    // ----- Enviar mensagem -----
+    // ====== ENVIAR MENSAGEM ======
+    function sendToServer(text) {
+      // Sem cabeçalho personalizado: evita bloqueio de CORS no Apps Script
+      return fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ room: roomId, user: username, text, from: clientId })
+      });
+    }
+
     chatForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = messageInput.value.trim();
@@ -196,17 +419,13 @@
       messageInput.focus(); // mantém o teclado aberto no celular
 
       try {
-        // Sem cabeçalho personalizado: evita bloqueio de CORS no Apps Script
-        await fetch(APPS_SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({ room: roomId, user: username, text, from: clientId })
-        });
+        await sendToServer(text);
       } catch (err) {
         appendSystemMessage('Não foi possível enviar a mensagem.');
       }
     });
 
-    // ----- Mensagens na tela (somem em 15s) -----
+    // ====== MENSAGENS NA TELA (somem em 2 minutos) ======
     function scheduleRemoval(el, ms) {
       setTimeout(() => {
         el.style.transition = 'opacity 0.5s';
@@ -245,13 +464,13 @@
       scheduleRemoval(wrapper, lifetimeMs);
     }
 
-    function appendSystemMessage(text) {
+    function appendSystemMessage(text, lifetimeMs = MESSAGE_LIFETIME_MS) {
       const sysMsg = document.createElement('div');
       sysMsg.className = 'text-center text-xs text-slate-400 bg-slate-900/50 py-1 px-3 rounded-full mx-auto my-2 border border-slate-800 max-w-fit';
       sysMsg.textContent = text;
       messagesDiv.appendChild(sysMsg);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      scheduleRemoval(sysMsg, MESSAGE_LIFETIME_MS);
+      scheduleRemoval(sysMsg, lifetimeMs);
     }
   </script>
 </body>

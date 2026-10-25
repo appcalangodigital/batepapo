@@ -33,7 +33,13 @@
       <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
         <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Efêmero</h1>
         <p class="text-slate-400 text-sm mb-6">Área do administrador. Digite a senha.</p>
-        <input type="password" id="password-input" autocomplete="current-password" placeholder="Senha" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-3 focus:outline-none focus:border-emerald-500">
+        <div class="relative mb-3">
+          <input type="password" id="password-input" autocomplete="current-password" placeholder="Senha" class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-4 pr-12 py-3 text-base text-white focus:outline-none focus:border-emerald-500">
+          <button type="button" id="toggle-password" aria-label="Mostrar senha" class="absolute inset-y-0 right-0 px-4 text-slate-400 hover:text-slate-200 transition">
+            <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg id="eye-closed" class="hidden" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 5c7 0 11 7 11 7a19.7 19.7 0 0 1-3.17 4.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
         <p id="login-error" class="hidden text-sm text-red-400 mb-3"></p>
         <button id="login-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition mb-3">Entrar</button>
         <button id="install-btn-login" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold py-2 rounded-lg transition">📲 Instalar no celular</button>
@@ -300,6 +306,14 @@
       loginBtn.disabled = false;
     }
     loginBtn.onclick = doLogin;
+    $('toggle-password').onclick = () => {
+      const show = passwordInput.type === 'password';
+      passwordInput.type = show ? 'text' : 'password';
+      $('eye-open').classList.toggle('hidden', show);
+      $('eye-closed').classList.toggle('hidden', !show);
+      $('toggle-password').setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+      passwordInput.focus();
+    };
     passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 
     logoutBtn.onclick = async () => {

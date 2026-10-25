@@ -69,7 +69,9 @@
       peer = new Peer();
 
       peer.on('open', (id) => {
-        const roomUrl = `${window.location.origin}${window.location.pathname}?room=${id}`;
+        const baseUrl = window.location.origin + window.location.pathname;
+        const roomUrl = `${baseUrl}?room=${id}`;
+        
         shareBtn.onclick = () => {
           navigator.clipboard.writeText(roomUrl);
           alert('Link da sala copiado! Envie para a outra pessoa entrar.');

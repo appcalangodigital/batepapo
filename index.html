@@ -5,18 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat Efêmero</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
 
   <div id="setup-screen" class="flex-1 flex items-center justify-center p-4">
     <div class="bg-slate-800 p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-700">
-      <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Directo</h1>
-      <p class="text-slate-400 text-sm mb-6">Conversa instantânea e sem salvamento de histórico.</p>
-      
+      <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Efêmero</h1>
+      <p class="text-slate-400 text-sm mb-6">Cada mensagem some em 15 segundos, para os dois lados.</p>
+
       <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Seu Nome / Apelido</label>
-      <input type="text" id="username-input" placeholder="Ex: Carlos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-emerald-500">
-      
+      <input type="text" id="username-input" maxlength="30" placeholder="Ex: Carlos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-emerald-500">
+
       <button id="start-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition">Entrar na Sala</button>
     </div>
   </div>
@@ -24,10 +23,10 @@
   <div id="chat-screen" class="hidden flex-1 flex flex-col h-screen max-w-4xl mx-auto w-full border-x border-slate-800 bg-slate-950">
     <header class="p-4 border-b border-slate-800 bg-slate-900 flex justify-between items-center">
       <div>
-        <h2 class="font-bold text-emerald-400" id="room-title">Sala Segura</h2>
-        <span id="status-badge" class="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Conectando...</span>
+        <h2 class="font-bold text-emerald-400">Sala Segura</h2>
+        <span id="status-badge" class="text-xs px-2 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">Conectando...</span>
       </div>
-      <button id="share-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition flex items-center gap-2">
+      <button id="share-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-3 py-2 rounded-lg transition">
         Copiar Link
       </button>
     </header>
@@ -35,12 +34,18 @@
     <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
     <form id="chat-form" class="p-4 border-t border-slate-800 bg-slate-900 flex gap-2">
-      <input type="text" id="message-input" placeholder="Digite uma mensagem..." class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500" autocomplete="off">
-      <button type="submit" id="send-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg font-semibold transition">Enviar</button>
+      <input type="text" id="message-input" maxlength="500" placeholder="Digite uma mensagem..." class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-emerald-500" autocomplete="off">
+      <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg font-semibold transition">Enviar</button>
     </form>
   </div>
 
   <script>
+    // ====== CONFIGURAÇÃO ======
+    // Cole aqui o link /exec gerado ao implantar o Apps Script
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCf6QDH7sj6G_57MQhWT61vsruHRIC9ILmArG_z4ZJzyPw7NDY3G9qyO1mykxCKIGkTQ/exec';
+    const MESSAGE_LIFETIME_MS = 15000;
+    const POLL_INTERVAL_MS = 2000;
+
     const setupScreen = document.getElementById('setup-screen');
     const chatScreen = document.getElementById('chat-screen');
     const usernameInput = document.getElementById('username-input');
@@ -51,79 +56,131 @@
     const statusBadge = document.getElementById('status-badge');
     const shareBtn = document.getElementById('share-btn');
 
+    const clientId = Math.random().toString(36).slice(2);
     let username = '';
-    let roomId = '';
-    let socket = null;
+    let since = 0;
+    let polling = false;
+    let connectedOnce = false;
 
     const urlParams = new URLSearchParams(window.location.search);
-    roomId = urlParams.get('room');
-
+    let roomId = urlParams.get('room');
     if (!roomId) {
       roomId = 'sala_' + Math.random().toString(36).substring(2, 9);
-      const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-      window.history.replaceState({}, '', newUrl);
+      window.history.replaceState({}, '', `${window.location.origin}${window.location.pathname}?room=${roomId}`);
     }
-
     const roomUrl = window.location.href;
-    shareBtn.onclick = () => {
-      navigator.clipboard.writeText(roomUrl);
-      alert('Link da sala copiado! Envie para a sua amiga.');
+
+    shareBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(roomUrl);
+        alert('Link da sala copiado! Envie para a outra pessoa.');
+      } catch {
+        prompt('Copie o link da sala:', roomUrl);
+      }
     };
+
+    function setStatus(text, color) {
+      const colors = {
+        amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+        green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+        red: 'bg-red-500/10 text-red-400 border-red-500/20'
+      };
+      statusBadge.textContent = text;
+      statusBadge.className = `text-xs px-2 py-0.5 rounded border ${colors[color]}`;
+    }
 
     startBtn.addEventListener('click', () => {
       username = usernameInput.value.trim() || 'Anônimo';
-      if (!username) return;
-
       setupScreen.classList.add('hidden');
       chatScreen.classList.remove('hidden');
-
-      initChat();
+      poll();
+      setInterval(poll, POLL_INTERVAL_MS);
     });
+    usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startBtn.click(); });
 
-    function initChat() {
-      socket = io('https://chat-server-relay.onrender.com', {
-        query: { room: roomId }
-      });
+    // Consulta o Apps Script em busca de mensagens novas
+    async function poll() {
+      if (polling) return;
+      polling = true;
+      try {
+        const url = `${APPS_SCRIPT_URL}?room=${encodeURIComponent(roomId)}&since=${since}`;
+        const res = await fetch(url);
+        const data = await res.json();
 
-      socket.on('connect', () => {
-        statusBadge.textContent = 'Conectado';
-        statusBadge.className = 'text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-        appendSystemMessage('Você entrou na sala segura. As mensagens não são salvas.');
-      });
+        setStatus('Conectado', 'green');
+        if (!connectedOnce) {
+          connectedOnce = true;
+          appendSystemMessage('Você entrou na sala. As mensagens somem em 15 segundos.');
+        }
 
-      socket.on('disconnect', () => {
-        statusBadge.textContent = 'Desconectado';
-        statusBadge.className = 'text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20';
-        appendSystemMessage('Conexão perdida com o servidor.');
-      });
-
-      socket.on('message', (data) => {
-        appendMessage(data.user, data.text, 'other');
-      });
+        data.msgs.forEach((m) => {
+          since = Math.max(since, m.id);
+          if (m.from === clientId) return; // minhas próprias mensagens já estão na tela
+          const remaining = MESSAGE_LIFETIME_MS - (data.now - m.ts);
+          if (remaining > 0) appendMessage(m.user, m.text, 'other', remaining);
+        });
+      } catch (err) {
+        setStatus('Sem conexão', 'red');
+      } finally {
+        polling = false;
+      }
     }
 
-    chatForm.addEventListener('submit', (e) => {
+    chatForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = messageInput.value.trim();
-      if (!text || !socket) return;
+      if (!text) return;
 
-      socket.emit('message', { room: roomId, user: username, text: text });
-      
-      appendMessage('Você', text, 'me');
+      appendMessage('Você', text, 'me', MESSAGE_LIFETIME_MS);
       messageInput.value = '';
+
+      try {
+        // Sem cabeçalho personalizado: evita bloqueio de CORS no Apps Script
+        await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ room: roomId, user: username, text, from: clientId })
+        });
+      } catch (err) {
+        appendSystemMessage('Não foi possível enviar a mensagem.');
+      }
     });
 
-    function appendMessage(sender, text, type) {
-      const msgWrapper = document.createElement('div');
-      msgWrapper.className = `flex flex-col ${type === 'me' ? 'items-end' : 'items-start'}`;
-      
-      const msgBubble = document.createElement('div');
-      msgBubble.className = `max-w-[80%] rounded-2xl px-4 py-2 text-sm ${type === 'me' ? 'bg-emerald-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}`;
-      
-      msgBubble.innerHTML = `<span class="block text-[10px] text-slate-300 font-bold mb-0.5">${sender}</span><div>${text}</div>`;
-      msgWrapper.appendChild(msgBubble);
-      messagesDiv.appendChild(msgWrapper);
+    function scheduleRemoval(el, ms) {
+      setTimeout(() => {
+        el.style.transition = 'opacity 0.5s';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 500);
+      }, Math.max(ms - 500, 0));
+    }
+
+    function appendMessage(sender, text, type, lifetimeMs) {
+      const wrapper = document.createElement('div');
+      wrapper.className = `flex flex-col ${type === 'me' ? 'items-end' : 'items-start'}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = `max-w-[80%] rounded-2xl px-4 py-2 text-sm break-words overflow-hidden ${
+        type === 'me' ? 'bg-emerald-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'
+      }`;
+
+      const name = document.createElement('span');
+      name.className = 'block text-[10px] text-slate-300 font-bold mb-0.5';
+      name.textContent = sender;
+
+      const body = document.createElement('div');
+      body.textContent = text;
+
+      const bar = document.createElement('div');
+      bar.className = 'h-0.5 bg-white/40 mt-2 rounded';
+      bar.style.width = `${(lifetimeMs / MESSAGE_LIFETIME_MS) * 100}%`;
+      bar.style.transition = `width ${lifetimeMs}ms linear`;
+
+      bubble.append(name, body, bar);
+      wrapper.appendChild(bubble);
+      messagesDiv.appendChild(wrapper);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+      requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = '0%'; }));
+      scheduleRemoval(wrapper, lifetimeMs);
     }
 
     function appendSystemMessage(text) {
@@ -132,6 +189,7 @@
       sysMsg.textContent = text;
       messagesDiv.appendChild(sysMsg);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      scheduleRemoval(sysMsg, MESSAGE_LIFETIME_MS);
     }
   </script>
 </body>

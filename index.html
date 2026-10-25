@@ -9,34 +9,78 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Chat">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" id="manifest-link" href="manifest.json">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* A tela ocupa exatamente a área visível do celular (dvh ignora a barra do navegador) */
     html, body { height: 100%; margin: 0; }
     body { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
     #chat-header { padding-top: calc(0.75rem + env(safe-area-inset-top, 0px)); }
     #chat-form { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px)); }
+    @keyframes pulse-bar { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+    #alert-bar { animation: pulse-bar 1.6s ease-in-out infinite; }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 font-sans">
 
-  <!-- TELA INICIAL: nome + sala -->
-  <div id="setup-screen" class="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-4">
-    <div class="bg-slate-800 p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-700">
-      <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Efêmero</h1>
-      <p class="text-slate-400 text-sm mb-6">Cada mensagem some em 2 minutos, para os dois lados.</p>
+  <!-- AVISOS (só admin): ficam visíveis até você entrar na sala da pessoa -->
+  <div id="alert-bar" class="hidden shrink-0 bg-amber-400 text-slate-900"></div>
 
-      <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Seu Nome / Apelido</label>
-      <input type="text" id="username-input" maxlength="30" placeholder="Ex: Carlos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-4 focus:outline-none focus:border-emerald-500">
+  <!-- LOGIN DO ADMIN (endereço base, sem link de sala) -->
+  <div id="login-screen" class="hidden flex-1 min-h-0 overflow-y-auto flex p-4">
+    <div class="m-auto w-full max-w-md">
+      <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
+        <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Efêmero</h1>
+        <p class="text-slate-400 text-sm mb-6">Área do administrador. Digite a senha.</p>
+        <input type="password" id="password-input" autocomplete="current-password" placeholder="Senha" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-3 focus:outline-none focus:border-emerald-500">
+        <p id="login-error" class="hidden text-sm text-red-400 mb-3"></p>
+        <button id="login-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition mb-3">Entrar</button>
+        <button id="install-btn-login" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold py-2 rounded-lg transition">📲 Instalar no celular</button>
+      </div>
+    </div>
+  </div>
 
-      <div id="room-section">
-      <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Nome da Sala</label>
-      <input type="text" id="room-input" maxlength="40" placeholder="Ex: familia-k8x2q" autocapitalize="none" autocorrect="off" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-1 focus:outline-none focus:border-emerald-500">
-      <p id="room-hint" class="text-xs text-slate-500 mb-4">Quem digitar o mesmo nome entra na mesma sala. Use um nome difícil de adivinhar.</p>
+  <!-- TELA INICIAL (admin: suas salas / convidado: nome) -->
+  <div id="setup-screen" class="hidden flex-1 min-h-0 overflow-y-auto flex p-4">
+    <div class="m-auto w-full max-w-md space-y-4">
+
+      <div class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
+        <h1 class="text-2xl font-bold text-emerald-400 mb-2">Chat Efêmero</h1>
+        <p id="setup-sub" class="text-slate-400 text-sm mb-6">Cada mensagem some em 2 minutos, para os dois lados.</p>
+
+        <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Seu Nome / Apelido</label>
+        <input type="text" id="username-input" maxlength="30" placeholder="Ex: Carlos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-4 focus:outline-none focus:border-emerald-500">
+
+        <div id="guest-actions" class="hidden">
+          <button id="start-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition">Entrar na conversa</button>
+        </div>
+
+        <div id="admin-actions" class="hidden">
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Nome da sala (só você vê)</label>
+          <input type="text" id="room-label-input" maxlength="30" placeholder="Ex: Maria" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-base text-white mb-4 focus:outline-none focus:border-emerald-500">
+          <button id="create-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition">Criar sala nova e entrar</button>
+        </div>
       </div>
 
-      <button id="start-btn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition mb-3">Entrar na Sala</button>
-      <button id="random-btn" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 font-semibold py-3 rounded-lg transition">Criar sala nova (nome aleatório)</button>
+      <!-- Só admin -->
+      <div id="admin-card" class="hidden bg-slate-800 p-5 rounded-2xl shadow-xl border border-slate-700">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <h2 class="text-lg font-bold text-emerald-400">Minhas salas</h2>
+          <span id="lobby-status" class="hidden text-xs px-2 py-0.5 rounded border">...</span>
+        </div>
+        <p class="text-xs text-slate-400 mb-3">Deixe esta tela aberta: quando alguém entrar em uma das suas salas, aparece um aviso até você entrar. Com o app instalado e os avisos ativados, o aviso também aparece na tela do celular com o app fechado.</p>
+
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button id="alerts-btn" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold px-3 py-2 rounded-lg transition">🔔 Ativar som e avisos</button>
+          <button id="install-btn-lobby" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold px-3 py-2 rounded-lg transition">📲 Instalar no celular</button>
+          <button id="logout-btn" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold px-3 py-2 rounded-lg transition">Sair da conta</button>
+        </div>
+
+        <p id="no-rooms" class="text-sm text-slate-500">Nenhuma sala ainda. Crie uma acima e ela aparece aqui.</p>
+        <div id="my-rooms" class="space-y-2"></div>
+      </div>
+
     </div>
   </div>
 
@@ -67,45 +111,161 @@
     // ====== CONFIGURAÇÃO ======
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCf6QDH7sj6G_57MQhWT61vsruHRIC9ILmArG_z4ZJzyPw7NDY3G9qyO1mykxCKIGkTQ/exec';
     const MESSAGE_LIFETIME_MS = 120000; // 2 minutos
-    const POLL_INTERVAL_MS = 2000;
-    const JOIN_TOKEN = '__join__'; // mensagem especial que avisa "fulano entrou na sala"
+    const JOIN_TOKEN = '__join__';      // mensagem especial: "fulano entrou na sala"
 
-    const setupScreen = document.getElementById('setup-screen');
-    const chatScreen = document.getElementById('chat-screen');
-    const usernameInput = document.getElementById('username-input');
-    const roomInput = document.getElementById('room-input');
-    const startBtn = document.getElementById('start-btn');
-    const randomBtn = document.getElementById('random-btn');
-    const messagesDiv = document.getElementById('messages');
-    const chatForm = document.getElementById('chat-form');
-    const messageInput = document.getElementById('message-input');
-    const statusBadge = document.getElementById('status-badge');
-    const shareBtn = document.getElementById('share-btn');
-    const leaveBtn = document.getElementById('leave-btn');
-    const soundBtn = document.getElementById('sound-btn');
-    const installBtn = document.getElementById('install-btn');
-    const roomTitle = document.getElementById('room-title');
+    const $ = (id) => document.getElementById(id);
+    const loginScreen = $('login-screen');
+    const setupScreen = $('setup-screen');
+    const chatScreen = $('chat-screen');
+    const passwordInput = $('password-input');
+    const loginBtn = $('login-btn');
+    const loginError = $('login-error');
+    const usernameInput = $('username-input');
+    const roomLabelInput = $('room-label-input');
+    const startBtn = $('start-btn');
+    const createBtn = $('create-btn');
+    const logoutBtn = $('logout-btn');
+    const messagesDiv = $('messages');
+    const chatForm = $('chat-form');
+    const messageInput = $('message-input');
+    const statusBadge = $('status-badge');
+    const lobbyStatus = $('lobby-status');
+    const shareBtn = $('share-btn');
+    const leaveBtn = $('leave-btn');
+    const soundBtn = $('sound-btn');
+    const installBtn = $('install-btn');
+    const installBtnLobby = $('install-btn-lobby');
+    const installBtnLogin = $('install-btn-login');
+    const alertsBtn = $('alerts-btn');
+    const roomTitle = $('room-title');
+    const alertBar = $('alert-bar');
+    const adminCard = $('admin-card');
+    const roomsBox = $('my-rooms');
+    const noRooms = $('no-rooms');
 
-    const clientId = Math.random().toString(36).slice(2);
     const baseTitle = document.title;
+
+    // ====== MEMÓRIA DO APARELHO (token, avisos e nome; nunca mensagens) ======
+    const store = {
+      get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+      set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+      del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+    };
+
+    // Identidade desta aba: continua a mesma se a página for recarregada
+    let clientId = Math.random().toString(36).slice(2);
+    try {
+      clientId = sessionStorage.getItem('cid') || clientId;
+      sessionStorage.setItem('cid', clientId);
+    } catch (e) {}
+
+    // ====== MODO: admin (tem token), convidado (veio por link de sala) ou login ======
+    function cleanRoom(s) {
+      return String(s || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 40);
+    }
+    const baseUrl = () => window.location.origin + window.location.pathname;
+    const roomLink = (r) => `${baseUrl()}?room=${r}`;
+    const invitedRoom = cleanRoom(new URLSearchParams(window.location.search).get('room'));
+
+    let adminToken = store.get('adminToken', '') || '';
+    const mode = adminToken ? 'admin' : (invitedRoom ? 'guest' : 'login');
+    const isGuest = mode === 'guest';
+
+    // ====== ESTADO ======
     let username = '';
-    let roomId = '';
-    let since = 0;
+    let activeRoom = '';        // sala aberta agora ('' = tela inicial)
+    let myRooms = [];           // admin: [{id, label}] vindo do servidor
+    let pending = {};           // admin: avisos "fulano quer falar com você"
+    const sinceMap = {};
+    const loaded = {};
+    const shown = new Set();    // ids locais das mensagens já mostradas (evita duplicar as minhas)
     let polling = false;
-    let connectedOnce = false;
+    let pollTimer = null;
+    let autoEnter = mode === 'admin' && !!invitedRoom;
+
+    if (mode === 'admin') {
+      myRooms = store.get('roomsCache', []);
+      if (!Array.isArray(myRooms)) myRooms = [];
+      pending = store.get('pendingAlerts', {});
+      if (!pending || typeof pending !== 'object' || Array.isArray(pending)) pending = {};
+    }
+    usernameInput.value = store.get('chatName', '') || '';
+
+    // ====== CHAMADAS AO SERVIDOR ======
+    async function api(action, data) {
+      const body = Object.assign({ action }, data || {});
+      if (adminToken) body.token = adminToken;
+      const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify(body) });
+      const j = await res.json();
+      if (j && j.error === 'auth' && adminToken) {
+        store.del('adminToken');
+        location.reload();
+        throw new Error('auth');
+      }
+      return j;
+    }
+
+    // ====== TELAS INICIAIS ======
+    loginScreen.classList.toggle('hidden', mode !== 'login');
+    setupScreen.classList.toggle('hidden', mode === 'login');
+    if (mode === 'guest') {
+      $('guest-actions').classList.remove('hidden');
+      leaveBtn.classList.add('hidden');
+      $('setup-sub').textContent = 'Você foi convidado para uma conversa. Cada mensagem some em 2 minutos. Digite seu nome e entre.';
+    } else if (mode === 'admin') {
+      $('admin-actions').classList.remove('hidden');
+      adminCard.classList.remove('hidden');
+    }
+
+    // ====== LOGIN ======
+    async function doLogin() {
+      const pw = passwordInput.value;
+      if (!pw) return;
+      loginBtn.disabled = true;
+      loginError.classList.add('hidden');
+      try {
+        const j = await api('login', { password: pw });
+        if (j.ok && j.token) {
+          store.set('adminToken', j.token);
+          location.reload();
+          return;
+        }
+        const msgs = {
+          wrong: 'Senha incorreta.',
+          locked: 'Muitas tentativas. Tente de novo em 5 minutos.',
+          nopassword: 'Defina ADMIN_PASSWORD nas propriedades do Apps Script.'
+        };
+        loginError.textContent = msgs[j.error] || 'Não foi possível entrar.';
+      } catch (e) {
+        loginError.textContent = 'Sem conexão com o servidor.';
+      }
+      loginError.classList.remove('hidden');
+      loginBtn.disabled = false;
+    }
+    loginBtn.onclick = doLogin;
+    passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+    logoutBtn.onclick = () => {
+      if (!confirm('Sair da conta de administrador neste aparelho?')) return;
+      store.del('adminToken');
+      store.del('pendingAlerts');
+      store.del('roomsCache');
+      location.reload();
+    };
 
     // ====== SOM E AVISOS ======
     let audioCtx = null;
     let soundOn = true;
-    let unread = 0;
     let flashTimer = null;
+    let flashLabel = '';
+    let pushOn = false;
 
-    // O navegador só libera som depois de um toque/clique da pessoa
     function unlockAudio() {
       try {
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
       } catch (e) {}
+      updateAlertsBtn();
     }
     document.addEventListener('pointerdown', unlockAudio);
 
@@ -135,119 +295,283 @@
       if (soundOn) { unlockAudio(); beep(); }
     };
 
+    function updateAlertsBtn() {
+      const soundReady = audioCtx && audioCtx.state === 'running';
+      const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+      let text;
+      if (!soundReady) text = '🔔 Ativar som e avisos';
+      else if (perm === 'default') text = '🔔 Ativar notificações';
+      else if (perm === 'denied') text = '🔔 Som ativado (notificações bloqueadas)';
+      else if (perm === 'unsupported') text = '🔔 Som ativado';
+      else text = pushOn ? '🔔 Avisos ativados ✓ (app fechado também)' : '🔔 Avisos ativados ✓';
+      alertsBtn.textContent = text;
+    }
+    alertsBtn.onclick = async () => {
+      unlockAudio();
+      if ('Notification' in window && Notification.permission === 'default') {
+        try { await Notification.requestPermission(); } catch (e) {}
+      }
+      await enablePush();
+      beep();
+      updateAlertsBtn();
+    };
+    setInterval(updateAlertsBtn, 3000);
+
+    // ====== AVISO COM O APP FECHADO (Web Push, só admin) ======
+    function urlB64ToUint8(b64) {
+      const s = (b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+      return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    }
+    async function enablePush() {
+      if (mode !== 'admin' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const k = await api('pushKey');
+        if (!k || !k.ok) return;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(k.key) });
+        const r = await api('pushSubscribe', { endpoint: sub.endpoint, origin: location.origin });
+        pushOn = !!(r && r.ok);
+        updateAlertsBtn();
+      } catch (e) {}
+    }
+
     function isAway() { return document.hidden || !document.hasFocus(); }
 
-    // Pisca o título da aba enquanto há mensagem não vista
-    function markUnread() {
-      unread++;
+    // Pisca o título da aba enquanto há aviso não visto
+    function markUnread(label) {
+      flashLabel = label;
       if (flashTimer) return;
       let on = false;
       flashTimer = setInterval(() => {
         on = !on;
-        document.title = on ? `💬 (${unread}) Nova mensagem!` : baseTitle;
+        document.title = on ? `💬 ${flashLabel}` : baseTitle;
       }, 1000);
     }
     function clearUnread() {
-      unread = 0;
       if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
       document.title = baseTitle;
     }
     window.addEventListener('focus', clearUnread);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) clearUnread(); });
 
-    // Notificação do sistema (aparece mesmo com a aba em segundo plano)
+    // Notificação do sistema (aparece com a aba em segundo plano, se o app ainda estiver rodando)
     async function showNotice(title, body) {
       if (!('Notification' in window) || Notification.permission !== 'granted') return;
       try {
         const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
-        const opts = { body, tag: 'chat-' + roomId, renotify: true, vibrate: [200, 100, 200] };
-        if (reg) reg.showNotification(title, opts);
-        else new Notification(title, opts);
+        const opts = { body, tag: 'chat-aviso', renotify: true, vibrate: [200, 100, 200], icon: 'icon-192.png' };
+        if (reg) {
+          reg.showNotification(title, opts);
+        } else {
+          const n = new Notification(title, opts);
+          n.onclick = () => { window.focus(); n.close(); };
+        }
       } catch (e) {}
     }
 
     function notifyIncoming(list) {
       const last = list[list.length - 1];
-      const title = list.length > 1 ? 'Chat Efêmero' : last.title;
-      const body = list.length > 1 ? `${list.length} novas mensagens` : last.body;
+      const multi = list.length > 1;
+      const title = multi ? 'Chat Efêmero' : last.title;
+      const body = multi ? `${list.length} novos avisos` : last.body;
       beep();
       if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
       if (isAway()) {
-        markUnread();
+        markUnread(body.slice(0, 60));
         showNotice(title, body);
       }
     }
 
-    // ====== INSTALAR NO CELULAR ======
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    if (isStandalone) installBtn.classList.add('hidden');
-
-    function makeIcon(size) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const x = c.getContext('2d');
-      x.fillStyle = '#059669';
-      x.fillRect(0, 0, size, size);
-      const bx = size * 0.2, by = size * 0.24, bw = size * 0.6, bh = size * 0.4, r = size * 0.09;
-      x.fillStyle = '#ffffff';
-      x.beginPath();
-      x.moveTo(bx + r, by);
-      x.arcTo(bx + bw, by, bx + bw, by + bh, r);
-      x.arcTo(bx + bw, by + bh, bx, by + bh, r);
-      x.arcTo(bx, by + bh, bx, by, r);
-      x.arcTo(bx, by, bx + bw, by, r);
-      x.closePath();
-      x.fill();
-      x.beginPath();
-      x.moveTo(size * 0.32, by + bh - 1);
-      x.lineTo(size * 0.32, size * 0.76);
-      x.lineTo(size * 0.5, by + bh - 1);
-      x.closePath();
-      x.fill();
-      x.fillStyle = '#059669';
-      [0.38, 0.5, 0.62].forEach((px) => {
-        x.beginPath();
-        x.arc(size * px, by + bh / 2, size * 0.035, 0, Math.PI * 2);
-        x.fill();
-      });
-      return c.toDataURL('image/png');
+    // ====== AVISOS PERSISTENTES (admin): "Fulano quer falar com você" ======
+    const roomLabel = (id) => {
+      const r = myRooms.find((x) => x.id === id);
+      return (r && r.label) || id;
+    };
+    function pendingText(r) {
+      const names = (pending[r] && pending[r].names) || [];
+      if (names.length > 1) return `${names.join(', ')} querem falar com você`;
+      return `${names[0] || 'Alguém'} quer falar com você`;
+    }
+    function addPending(room, name) {
+      const p = pending[room] || { names: [] };
+      if (!p.names.includes(name)) p.names.push(name);
+      pending[room] = p;
+      store.set('pendingAlerts', pending);
+    }
+    function clearPending(room) {
+      if (!pending[room]) return;
+      delete pending[room];
+      store.set('pendingAlerts', pending);
+      renderAlerts();
     }
 
-    // Cria o "manifesto" do app na hora, para o app instalado abrir direto na sala
-    function setupManifest() {
+    function mkBtn(label, cls, fn) {
+      const b = document.createElement('button');
+      b.className = `text-white text-xs font-semibold px-3 py-2 rounded-lg transition ${cls}`;
+      b.textContent = label;
+      b.onclick = fn;
+      return b;
+    }
+
+    function renderRooms() {
+      if (mode !== 'admin') return;
+      roomsBox.innerHTML = '';
+      noRooms.classList.toggle('hidden', myRooms.length > 0);
+      myRooms.forEach((room) => {
+        const r = room.id;
+        const row = document.createElement('div');
+        row.className = `p-3 rounded-lg bg-slate-900 border ${pending[r] ? 'border-amber-400' : 'border-slate-700'}`;
+
+        const top = document.createElement('div');
+        top.className = 'flex items-center justify-between gap-2';
+        const nameBox = document.createElement('div');
+        nameBox.className = 'min-w-0';
+        const name = document.createElement('div');
+        name.className = 'font-semibold text-sm truncate';
+        name.textContent = room.label || r;
+        nameBox.append(name);
+        if (room.label) {
+          const sub = document.createElement('div');
+          sub.className = 'text-[10px] text-slate-500 truncate';
+          sub.textContent = r;
+          nameBox.append(sub);
+        }
+        const btns = document.createElement('div');
+        btns.className = 'flex gap-2 shrink-0';
+        btns.append(
+          mkBtn('Entrar', 'bg-emerald-600 hover:bg-emerald-500', () => enterFromList(r)),
+          mkBtn('Link', 'bg-slate-700 hover:bg-slate-600', () => copyRoomLink(r)),
+          mkBtn('🗑', 'bg-slate-700 hover:bg-slate-600', () => removeRoom(r))
+        );
+        top.append(nameBox, btns);
+        row.append(top);
+
+        if (pending[r]) {
+          const a = document.createElement('div');
+          a.className = 'text-amber-300 text-sm font-semibold mt-1';
+          a.textContent = '👋 ' + pendingText(r);
+          row.append(a);
+        }
+        roomsBox.append(row);
+      });
+    }
+
+    function renderAlerts() {
+      if (mode !== 'admin') return;
+      alertBar.innerHTML = '';
+      const ids = Object.keys(pending).filter((r) => myRooms.some((x) => x.id === r) && r !== activeRoom);
+      alertBar.classList.toggle('hidden', ids.length === 0);
+      ids.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-3 px-4 py-2 border-b border-amber-600/40';
+        const left = document.createElement('div');
+        left.className = 'min-w-0';
+        const t = document.createElement('div');
+        t.className = 'font-bold truncate';
+        t.textContent = '👋 ' + pendingText(r);
+        const s = document.createElement('div');
+        s.className = 'text-xs opacity-80 truncate';
+        s.textContent = 'Sala: ' + roomLabel(r);
+        left.append(t, s);
+        const b = document.createElement('button');
+        b.className = 'shrink-0 bg-slate-900 text-white text-sm font-semibold px-4 py-2 rounded-lg';
+        b.textContent = 'Entrar';
+        b.onclick = () => enterFromList(r);
+        row.append(left, b);
+        alertBar.append(row);
+      });
+      renderRooms();
+    }
+
+    async function copyRoomLink(r) {
+      const link = roomLink(r);
       try {
-        const scope = (window.location.origin + window.location.pathname).replace(/[^/]*$/, '');
+        await navigator.clipboard.writeText(link);
+        alert('Link da sala copiado! Envie para a outra pessoa.');
+      } catch {
+        prompt('Copie o link da sala:', link);
+      }
+    }
+
+    async function removeRoom(r) {
+      if (!confirm(`Apagar a sala "${roomLabel(r)}"? O link deixa de funcionar para todos.`)) return;
+      try {
+        const j = await api('deleteRoom', { room: r });
+        if (!j.ok) throw new Error('fail');
+      } catch (e) {
+        if (e.message !== 'auth') alert('Não foi possível apagar a sala. Tente de novo.');
+        return;
+      }
+      myRooms = myRooms.filter((x) => x.id !== r);
+      store.set('roomsCache', myRooms);
+      delete pending[r];
+      store.set('pendingAlerts', pending);
+      renderAlerts();
+    }
+
+    function ensureName() {
+      if (!usernameInput.value.trim()) {
+        const n = prompt('Qual é o seu nome?');
+        if (n && n.trim()) usernameInput.value = n.trim();
+      }
+    }
+
+    function enterFromList(r) {
+      ensureName();
+      enterRoom(r);
+    }
+
+    createBtn.onclick = async () => {
+      ensureName();
+      createBtn.disabled = true;
+      try {
+        const j = await api('createRoom', { label: roomLabelInput.value.trim() });
+        if (!j.ok) {
+          alert(j.error === 'limit' ? 'Limite de salas atingido. Apague alguma.' : 'Não foi possível criar a sala.');
+          return;
+        }
+        myRooms.push({ id: j.id, label: j.label || '' });
+        store.set('roomsCache', myRooms);
+        roomLabelInput.value = '';
+        enterRoom(j.id);
+      } catch (e) {
+        if (e.message !== 'auth') alert('Sem conexão com o servidor.');
+      } finally {
+        createBtn.disabled = false;
+      }
+    };
+
+    // ====== INSTALAR NO CELULAR ======
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone) {
+      [installBtn, installBtnLobby, installBtnLogin].forEach((b) => b.classList.add('hidden'));
+    }
+
+    // Convidado: o app instalado abre direto na sala dele.
+    // Admin (e tela de senha): usa o manifest.json fixo, que abre no endereço base com senha.
+    function setupManifest() {
+      if (!isGuest) return;
+      try {
+        const scope = baseUrl().replace(/[^/]*$/, '');
         const manifest = {
+          id: `${scope}?room=${invitedRoom}`,
           name: 'Chat Efêmero',
           short_name: 'Chat',
-          start_url: window.location.href,
+          lang: 'pt-BR',
+          start_url: roomLink(invitedRoom),
           scope: scope,
           display: 'standalone',
           background_color: '#0f172a',
           theme_color: '#0f172a',
           icons: [
-            { src: makeIcon(192), sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-            { src: makeIcon(512), sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+            { src: scope + 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: scope + 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: scope + 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+            { src: scope + 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
           ]
         };
-        const url = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
-        let link = document.getElementById('manifest-link');
-        if (!link) {
-          link = document.createElement('link');
-          link.rel = 'manifest';
-          link.id = 'manifest-link';
-          document.head.appendChild(link);
-        }
-        link.href = url;
-
-        let apple = document.getElementById('apple-icon');
-        if (!apple) {
-          apple = document.createElement('link');
-          apple.rel = 'apple-touch-icon';
-          apple.id = 'apple-icon';
-          document.head.appendChild(apple);
-        }
-        apple.href = makeIcon(180);
+        $('manifest-link').href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
       } catch (e) {}
     }
     setupManifest();
@@ -261,9 +585,11 @@
       e.preventDefault();
       deferredInstall = e;
     });
-    window.addEventListener('appinstalled', () => installBtn.classList.add('hidden'));
+    window.addEventListener('appinstalled', () => {
+      [installBtn, installBtnLobby, installBtnLogin].forEach((b) => b.classList.add('hidden'));
+    });
 
-    installBtn.onclick = async () => {
+    async function doInstall() {
       if (deferredInstall) {
         deferredInstall.prompt();
         try { await deferredInstall.userChoice; } catch (e) {}
@@ -274,80 +600,64 @@
       alert(isIOS
         ? 'No iPhone: abra este link no Safari, toque no botão Compartilhar (quadrado com uma seta) e escolha "Adicionar à Tela de Início".'
         : 'No Android: toque nos três pontinhos (⋮) do navegador e escolha "Instalar app" ou "Adicionar à tela inicial".');
-    };
-
-    // ====== SALAS ======
-    function cleanRoom(s) {
-      return String(s || '')
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9_-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 40);
     }
+    installBtn.onclick = doInstall;
+    installBtnLobby.onclick = doInstall;
+    installBtnLogin.onclick = doInstall;
 
-    function randomRoom() {
-      const a = new Uint8Array(6);
-      crypto.getRandomValues(a);
-      return 'sala-' + Array.from(a, (b) => (b % 36).toString(36)).join('');
-    }
-
-    // Quem chega por um link de sala é convidado: só vê o campo do nome e o botão de entrar
-    const invitedRoom = cleanRoom(new URLSearchParams(window.location.search).get('room'));
-    const isGuest = !!invitedRoom;
-    if (isGuest) {
-      roomInput.value = invitedRoom;
-      document.getElementById('room-section').classList.add('hidden');
-      randomBtn.classList.add('hidden');
-      leaveBtn.classList.add('hidden');
-      document.querySelector('#setup-screen p').textContent = 'Você foi convidado para uma conversa. Cada mensagem some em 2 minutos. Digite seu nome e entre.';
-    }
-
+    // ====== ENTRAR / SAIR DE UMA SALA ======
     function enterRoom(room) {
       username = usernameInput.value.trim() || 'Anônimo';
-      roomId = room;
-      since = 0;
+      store.set('chatName', usernameInput.value.trim());
+      activeRoom = room;
+      sinceMap[room] = 0;
+      loaded[room] = false;
+      shown.clear();
+      messagesDiv.innerHTML = '';
+      clearUnread();
 
-      // Pede permissão para avisos e libera o som (precisa ser dentro do clique)
       unlockAudio();
       if ('Notification' in window && Notification.permission === 'default') {
-        try { Notification.requestPermission(); } catch (e) {}
+        try { Notification.requestPermission().then(() => enablePush()); } catch (e) {}
       }
 
-      window.history.replaceState({}, '', `${window.location.origin}${window.location.pathname}?room=${roomId}`);
-      setupManifest();
-      roomTitle.textContent = 'Sala: ' + roomId;
+      if (mode === 'admin') clearPending(room);
 
+      window.history.replaceState({}, '', roomLink(room));
+      roomTitle.textContent = 'Sala: ' + (mode === 'admin' ? roomLabel(room) : room);
       setupScreen.classList.add('hidden');
       chatScreen.classList.remove('hidden');
+      renderAlerts();
+      appendSystemMessage('Você entrou na sala. As mensagens somem em 2 minutos.');
       messageInput.focus();
 
-      poll();
-      setInterval(poll, POLL_INTERVAL_MS);
-
+      schedulePoll(0);
       // Avisa a outra pessoa que você entrou
-      sendToServer(JOIN_TOKEN).catch(() => {});
+      api('send', { room, user: username, text: JOIN_TOKEN, from: clientId, cid: '' })
+        .then((j) => {
+          if (j && !j.ok && j.error === 'noroom') appendSystemMessage('Esta sala não existe ou foi encerrada.');
+        })
+        .catch(() => {});
     }
 
-    startBtn.addEventListener('click', () => {
-      enterRoom(cleanRoom(roomInput.value) || randomRoom());
+    function leaveRoom() {
+      activeRoom = '';
+      messagesDiv.innerHTML = '';
+      clearUnread();
+      window.history.replaceState({}, '', window.location.pathname);
+      chatScreen.classList.add('hidden');
+      setupScreen.classList.remove('hidden');
+      renderAlerts();
+    }
+
+    startBtn.addEventListener('click', () => { if (invitedRoom) enterRoom(invitedRoom); });
+    usernameInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (isGuest) startBtn.click();
     });
-    randomBtn.addEventListener('click', () => enterRoom(randomRoom()));
-    [usernameInput, roomInput].forEach((el) =>
-      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') startBtn.click(); })
-    );
 
-    shareBtn.onclick = async () => {
-      const link = window.location.href;
-      try {
-        await navigator.clipboard.writeText(link);
-        alert('Link da sala copiado! Envie para a outra pessoa.');
-      } catch {
-        prompt('Copie o link da sala:', link);
-      }
-    };
-
-    leaveBtn.onclick = () => { window.location.href = window.location.pathname; };
+    shareBtn.onclick = () => copyRoomLink(activeRoom);
+    leaveBtn.onclick = leaveRoom;
 
     function setStatus(text, color) {
       const colors = {
@@ -357,71 +667,123 @@
       };
       statusBadge.textContent = text;
       statusBadge.className = `text-xs px-2 py-0.5 rounded border ${colors[color]}`;
+      lobbyStatus.textContent = text;
+      lobbyStatus.className = `text-xs px-2 py-0.5 rounded border ${colors[color]}`;
     }
 
     // ====== RECEBER MENSAGENS (consulta o Apps Script) ======
+    // Intervalo adaptativo: rápido só com o chat aberto e visível
+    function pollDelay() {
+      if (activeRoom) return document.hidden ? 10000 : 2500;
+      return document.hidden ? 20000 : 8000;
+    }
+    function schedulePoll(delay) {
+      clearTimeout(pollTimer);
+      if (mode === 'login') return;
+      pollTimer = setTimeout(async () => {
+        await poll();
+        schedulePoll(pollDelay());
+      }, delay === undefined ? pollDelay() : delay);
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { clearUnread(); schedulePoll(0); }
+    });
+
     async function poll() {
       if (polling) return;
+      if (mode === 'login') return;
+      if (isGuest && !activeRoom) return;
       polling = true;
       try {
-        const url = `${APPS_SCRIPT_URL}?room=${encodeURIComponent(roomId)}&since=${since}`;
-        const res = await fetch(url);
-        const data = await res.json();
-
-        const firstPoll = !connectedOnce;
+        const data = await api('poll', isGuest ? { rooms: [activeRoom], since: sinceMap } : { since: sinceMap });
+        if (!data || !data.ok) throw new Error('bad');
         setStatus('Conectado', 'green');
-        if (!connectedOnce) {
-          connectedOnce = true;
-          appendSystemMessage('Você entrou na sala. As mensagens somem em 2 minutos.');
+
+        let ids;
+        if (isGuest) {
+          ids = [activeRoom];
+          if ((data.gone || []).includes(activeRoom)) {
+            appendSystemMessage('Esta sala foi encerrada.');
+          }
+        } else {
+          myRooms = data.registry || [];
+          store.set('roomsCache', myRooms);
+          ids = myRooms.map((r) => r.id);
+          Object.keys(pending).forEach((r) => { if (!ids.includes(r)) delete pending[r]; });
+          store.set('pendingAlerts', pending);
+          if (activeRoom && !ids.includes(activeRoom)) leaveRoom();
         }
 
         const incoming = [];
-        data.msgs.forEach((m) => {
-          since = Math.max(since, m.id);
-          if (m.from === clientId) return; // minhas mensagens já estão na tela
-          const remaining = MESSAGE_LIFETIME_MS - (data.now - m.ts);
-          if (remaining <= 0) return;
+        ids.forEach((r) => {
+          const initial = !loaded[r]; // primeira leitura da sala: carrega sem apitar
+          loaded[r] = true;
 
-          if (m.text === JOIN_TOKEN) {
-            appendSystemMessage(`${m.user} entrou na sala`, remaining);
-            incoming.push({ title: 'Chat Efêmero', body: `${m.user} entrou na sala` });
-          } else {
-            appendMessage(m.user, m.text, 'other', remaining);
-            incoming.push({ title: m.user, body: m.text });
-          }
+          (data.rooms[r] || []).forEach((m) => {
+            sinceMap[r] = Math.max(sinceMap[r] || 0, m.id);
+            const remaining = MESSAGE_LIFETIME_MS - (data.now - m.ts);
+            if (remaining <= 0) return;
+            const isJoin = m.text === JOIN_TOKEN;
+            const mine = m.from === clientId;
+
+            if (r === activeRoom) {
+              if (mine) {
+                // Minhas mensagens já estão na tela, exceto depois de recarregar a página
+                if (isJoin || (m.cid && shown.has(m.cid))) return;
+                if (m.cid) shown.add(m.cid);
+                appendMessage('Você', m.text, 'me', remaining);
+              } else if (isJoin) {
+                const body = isGuest ? `${m.user} entrou na sala` : `${m.user} quer falar com você`;
+                appendSystemMessage(`${m.user} entrou na sala`, remaining);
+                if (!initial) incoming.push({ title: 'Chat Efêmero', body });
+              } else {
+                appendMessage(m.user, m.text, 'other', remaining);
+                if (!initial) incoming.push({ title: m.user, body: m.text });
+              }
+            } else if (!isGuest && m.role === 'guest' && !mine) {
+              // Alguém falou/entrou numa sala sua em que você não está agora
+              addPending(r, m.user);
+              if (!initial) incoming.push({ title: 'Chat Efêmero', body: `${m.user} quer falar com você` });
+            }
+          });
         });
 
-        // Na primeira consulta só carrega o que já estava na sala, sem apitar
-        if (!firstPoll && incoming.length) notifyIncoming(incoming);
+        if (!isGuest) renderAlerts();
+        if (incoming.length) notifyIncoming(incoming);
+
+        // Veio por um link de sala e é admin: entra direto se já souber o nome
+        if (autoEnter && !activeRoom) {
+          autoEnter = false;
+          if (ids.includes(invitedRoom) && usernameInput.value.trim()) enterRoom(invitedRoom);
+        }
       } catch (err) {
-        setStatus('Sem conexão', 'red');
+        if (!err || err.message !== 'auth') setStatus('Sem conexão', 'red');
       } finally {
         polling = false;
       }
     }
 
     // ====== ENVIAR MENSAGEM ======
-    function sendToServer(text) {
-      // Sem cabeçalho personalizado: evita bloqueio de CORS no Apps Script
-      return fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ room: roomId, user: username, text, from: clientId })
-      });
-    }
-
     chatForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = messageInput.value.trim();
-      if (!text) return;
+      if (!text || !activeRoom) return;
 
+      const cid = Math.random().toString(36).slice(2, 12);
+      shown.add(cid);
       appendMessage('Você', text, 'me', MESSAGE_LIFETIME_MS);
       messageInput.value = '';
       messageInput.focus(); // mantém o teclado aberto no celular
 
       try {
-        await sendToServer(text);
+        const j = await api('send', { room: activeRoom, user: username, text, from: clientId, cid });
+        if (!j || !j.ok) {
+          appendSystemMessage(j && j.error === 'noroom'
+            ? 'Esta sala não existe mais.'
+            : 'Não foi possível enviar a mensagem.');
+        }
       } catch (err) {
-        appendSystemMessage('Não foi possível enviar a mensagem.');
+        if (!err || err.message !== 'auth') appendSystemMessage('Não foi possível enviar a mensagem.');
       }
     });
 
@@ -471,6 +833,15 @@
       messagesDiv.appendChild(sysMsg);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
       scheduleRemoval(sysMsg, lifetimeMs);
+    }
+
+    // ====== INÍCIO ======
+    updateAlertsBtn();
+    if (mode === 'admin') {
+      setStatus('Conectando...', 'amber');
+      renderAlerts();
+      enablePush();
+      schedulePoll(0); // já começa a vigiar todas as suas salas, mesmo na tela inicial
     }
   </script>
 </body>
